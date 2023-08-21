@@ -10,7 +10,7 @@
 #   define _SCL_SECURE_NO_WARNINGS
 
 #   ifdef DLLIB_EXPORTS
-#       define STR_PUBLIC __declspec(dllexport)
+#       define DLLIB_PUBLIC __declspec(dllexport)
 #   else
 #       define DLLIB_PUBLIC __declspec(dllimport)
 #   endif

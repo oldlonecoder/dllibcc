@@ -16,7 +16,8 @@ SET(FRAMEWORK_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 add_library(
         ${TargetName}
         SHARED
-        include/${TargetName}/public.h                 #global framework-wide macros definitions and dll export and import macros for MSVC.
+       include/${TargetName}/public.h                 #global framework-wide macros definitions and dll export and import macros for MSVC.
+       include/${TargetName}/dllib.h            src/dllib.cc
 )
 
 

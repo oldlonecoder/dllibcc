@@ -16,9 +16,9 @@
 #pragma once
 
 
-#include <dllibcc/dllib.h>
-#include <logbook/rem.h>
-#include 
+#include <dllibcc/public.h>
+#include <logbook/expect.h>
+
 
 
 #ifdef _WIN32
@@ -33,54 +33,58 @@
 #include <map>
 
 
+
+// --------------  code in lib --------------------
+
 #define BEGIN_EXPORT      extern "C"\
 {
-#define ENDEXPORT \
+#define END_EXPORT \
 }
 
 #define CREATE_SYM "_add_symbol"
 #define DELETE_SYM "_remove_symbol"
 #define EXPORT_SYM "_export"
-#define EXPORT   dll::dllib::interface_map export()
+#define EXPORT_SYMBOLS   dll::dllib::interface_map export_symbols()
 #define CREATE_INSTANCE dll::dllib* _create(book::object* parent_obj, const std::string &obj_id)
 #define DELETE_INSTANCE void _del(dll::dllib* dllib)
 
-
+// -------------------------------------------------
 namespace dll
 {
 
 
-class DLLIB_PUBLIC dllib: public book::object
+class DLLIB_PUBLIC dllib : public book::object
 {
     
     friend class dll_file;
 public:
-    using interface_map = std::map<std::string, FARPROC>;
+    using interface_map = std::map<std::string, void*>;
 protected:
     interface_map _interface;
 public:
-   dllib() = delete;
-   dllib(constdllib&) = delete;
-   dllib(object* parent_, const std::string& id_);
-    ~rtdl() override;
+    dllib() = delete;
+    dllib(const dllib&) = delete;
+    dllib(object* parent_, const std::string& id_);
+    ~dllib() override;
     
 
-    template<typename return_type, typename ...Args> expect<return_type> call(const std::string& symbol_id, Args...args)
+    template<typename return_type, typename ...Args> book::expect<return_type> call(const std::string& symbol_id, Args...args)
     {
-        using F = reutrn_type(*)(dllib*, Args...args);
+        using F = return_type(*)(dllib*, Args...args);
         auto fn_i = _interface.find(symbol_id);
         if (fn_i == _interface.end())
         {
-            return book::rem::push_error(HERE) << book::rem::code::notexist << " symbol '" << symbol_id;
+            return book::rem::push_error(HERE) << book::rem::notexist << " symbol '" << symbol_id;
             //return return_type();
         }
-        F fn = reinterpret_cast<F>(f->second);
+        F fn = reinterpret_cast<F>(fn_i->second);
         if (fn)
-            return fn(this, Args_...);
+            return fn(this, args...);
+        return return_type{};
     }
 
     void set_interface(const dllib::interface_map& i_) { _interface = i_; }
-    virtual rem::code Run() = 0;
+    virtual book::rem::code execute() = 0;
 };
 
 
@@ -100,9 +104,10 @@ public:
     dll_file(book::object* parent_obj, const std::string& dl_id);
     ~dll_file() = default;
     std::string locate();
-    rem::code open();
+    book::rem::code open();
     int close();
-    int release();
+    dllib* lib() { return _dl;  }
+    //int release();
 };
 
 

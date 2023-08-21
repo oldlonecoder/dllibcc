@@ -13,16 +13,26 @@
  ******************************************************************************************/
 
 
-
+#include "dllibcc/dllib.h"
 
 
 #ifdef _WIN32
 
+namespace dll
+{
 
+dllib::dllib(object* parent_obj, const std::string& lib_id) : book::object(parent_obj, lib_id) {}
+
+dllib::~dllib()
+{
+    _interface.clear();
+}
+
+    
 std::string dll_file::locate()
 {
-    iostr  file = "%s.dll";
-    file << _id;
+    stracc  file = "%s.dll";
+    file << id();
     WIN32_FIND_DATA FindFileData;
 #ifdef _UNICODE
     if (HANDLE handle = FindFirstFile((LPCWSTR)file().c_str(), &FindFileData); handle != INVALID_HANDLE_VALUE)
@@ -33,23 +43,25 @@ std::string dll_file::locate()
     if (HANDLE handle = FindFirstFile((LPCSTR)file().c_str(), &FindFileData); handle != INVALID_HANDLE_VALUE)
 #endif
 #endif
-    FindClose(handle);
+    {
+        FindClose(handle);
+        return file();
+    }
+
     return file();
 }
 
-rem::code dll_file::open()
+
+
+dll_file::dll_file(book::object* parent_obj, const std::string& dl_id): book::object(parent_obj, dl_id){}
+
+
+book::rem::code dll_file::open()
 {
     std::string str_location = locate();
     if (str_location.empty()) {
-        //return { (
-        //    Annotation::Push(),
-        //    Annotation::Type::Error,' ',
-        //    "Library file '", _ID, "' ",
-        //    Annotation::Code::NotFound,
-        //    " Within the system paths."
-        //) };
-        //throw  message::push(message::t::error), id, " not found into valid paths.";
-        return rem::code::null_ptr;
+        book::rem::push_error(HERE) << " Library file " << str_location << book::rem::notexist << " in the system path.";
+        return book::rem::notexist;
     }
 #if defined(_UNICODE) || defined(UNICODE)
     _Handle = LoadLibrary((LPCWSTR)str_location.c_str());
@@ -68,57 +80,59 @@ rem::code dll_file::open()
 
         //Free the buffer.
         LocalFree(messageBuffer);
-        // ---------------------------------------------------------------------------------------
-        //return { (
-        //    Annotation::Push(),
-        //    Annotation::Type::Error,
-        //    Annotation::Code::Null,
-        //    "Openning ", _ID, "Library file: [",SysMsg, "]."
-        //) };
-        std::cerr << SysMsg << "\n";
-        return rem::code::empty;
+        book::rem::push_error() << " Library file '" << str_location << "' : "
+            << book::rem::failed << " open/load: " << color::Yellow << SysMsg;
+        return book::rem::empty;
     }
-    //throw  message::push(message::t::error), id, ": dll error";
 
-//GetProcAddress;
+    // ---------- Import library's exported symbols : --------------------------------
     FARPROC _export_fn = nullptr;
+    // --- Manually load the external _export function pointer from that library:
     _export_fn = GetProcAddress(_Handle, EXPORT_SYM);
     if (!_export_fn) {
         FreeLibrary(_Handle);
     LeaveWithNoInterface:
-        //return { (
-        //    Annotation::Push(),
-        //    Annotation::Type::Error,
-        //    Annotation::Code::Empty,
-        //    " - rtdl ", _ID, ": does not - or failed to - provides interface."
-        //) };
-        //throw message::push(message::t::error), " rtdl ", id, ": rtdl does not provides exported interface.";
-        return rem::code::null_ptr;
+        return book::rem::null_ptr;
     }
+    // -------------------------------------------------------------------------------
 
-    _interface = reinterpret_cast<rtdl::interface_map(*)()>(_export_fn)();
+    // Then invoke the export function pointer that fills the interface_map:
+    _interface = reinterpret_cast<dllib::interface_map(*)()>(_export_fn)();
     if (_interface.empty()) {
         FreeLibrary(_Handle);
         goto LeaveWithNoInterface;
     }
 
-    for (auto& ix : _interface) {
-        ix.second = GetProcAddress(_Handle, ix.first.c_str());
-        if (!ix.second) {
+    for (auto& [sym_id, fn_ptr] : _interface) {
+        fn_ptr = GetProcAddress(_Handle, sym_id.c_str());
+        //ix.second = GetProcAddress(_Handle, ix.first.c_str());
+        if (!fn_ptr) {
             FreeLibrary(_Handle);
-            //return { (
-            //    Annotation::Push(),
-            //    Annotation::Type::Error,
-            //    Annotation::Code::Null,
-            //    "- rtdl '", _ID, " has no `exported` symbol identified by '", ix.first,"', while listed in its exported interface."
-            //) };
-            //throw message::push(message::t::error), " rtdl ", id, ": exported symbol is unbound: [", ix.first, "]";
-            return rem::code::empty;
+            book::rem::push_error(HERE) << book::rem::aborted << " symbol '" << color::Yellow << sym_id << color::Reset << "' has no address.";
+            return book::rem::empty;
         }
     }
-    if ((_rtdl = (reinterpret_cast<rtdl * (*)()>(_interface[CREATE_SYM]))()) != nullptr) {
-        _rtdl->set_interface(_interface);
+
+    if ((_dl = (reinterpret_cast<dllib * (*)()>(_interface["_create"]))()) != nullptr) {
+        _dl->set_interface(_interface);
         _interface.clear(); // Do not keep a local copy since the interface data is now owned by the rtdl Instance...
     }
-    return rem::code::ok;
+    return book::rem::ok;
+}
+
+
+
+int dll_file::close()
+{
+    // _dl instance must be destroyed/released from the external library:
+    // _dl->call("_del");
+    (reinterpret_cast<void (*)(dllib*)>(_dl->_interface["_del"]))(_dl);
+    FreeLibrary(_Handle);    
+    return 0;
+}
+
+#endif 
+
+
+
 }
